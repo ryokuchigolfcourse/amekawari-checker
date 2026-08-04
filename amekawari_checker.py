@@ -2,15 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 南筑波ゴルフ場「雨割り」自動判定ツール
-====================================
-
-【適用条件】
-  前日正午時点で、翌日 7:00〜10:00 の間に
-  「1時間以上、降水量が3mm/h 以上」の予報がある場合に適用し、雨割りを宣言する。
-  当日の降雨については適用されない。
-
-【データ取得元】
-  https://weathernews.jp/golf/kanto/ibaraki/113/
 """
 
 import json
@@ -67,7 +58,6 @@ def _fetch_page_html_rendered(url: str, timeout: int = 30) -> str:
         browser = p.chromium.launch(headless=True)
         try:
             page = browser.new_page(user_agent=USER_AGENT)
-            # 広告等の常時通信があるため "networkidle" ではなく "load" を待つ
             page.goto(url, timeout=timeout_ms, wait_until="load")
             try:
                 page.wait_for_selector("text=/\\d+mm/", timeout=timeout_ms)
@@ -154,6 +144,25 @@ def parse_hourly_forecast(html: str, base_dt: Optional[datetime] = None) -> List
     return results
 
 
+def _build_applicable_message(target_date: date) -> str:
+    weekday_kanji = ["月", "火", "水", "木", "金", "土", "日"]
+    weekday_str = weekday_kanji[target_date.weekday()]
+    date_str = f"{target_date.month}/{target_date.day}({weekday_str})"
+
+    return (
+        "★雨割り営業のお知らせ★\n"
+        f"明日{date_str}は、「雨割りプラン」を適用いたします。\n"
+        "本日中に公式Webサイトまたは電話でのご予約の方が必要となりますので\n"
+        "ご注意ください。\n"
+        "ご予約がない場合は適用されませんのでご予約お待ちしております。\n"
+        "\n"
+        "・ラウンド：2,000円引き（税込）\n"
+        "・ハーフ　：1,000円引き（税込）\n"
+        "\n"
+        "予約・お問い合わせ：営業課予約係 TEL 029-847-7521"
+    )
+
+
 def judge_amekawari(
     forecasts: List[HourlyForecast],
     target_date: date,
@@ -227,9 +236,7 @@ def run(save_json_path: str = "result.json") -> dict:
         "matched_hours": [f.hour for f in matched],
         "generated_at": now.isoformat(),
         "message": (
-            f"【雨割り適用のお知らせ】\n"
-            f"{target_date.strftime('%m月%d日')}は、7時〜10時の間に1時間降水量3mm以上の"
-            f"予報が出ているため、雨割りを適用いたします。"
+            _build_applicable_message(target_date)
             if applicable
             else (
                 f"{target_date.strftime('%m月%d日')}の天気予報では、雨割り適用条件（7時〜10時の間に"
