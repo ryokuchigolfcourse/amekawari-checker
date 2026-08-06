@@ -7,6 +7,7 @@
 import json
 import re
 import sys
+import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta, date
 from typing import List, Optional
@@ -37,22 +38,32 @@ class HourlyForecast:
     rain_mm: float
 
 
-def fetch_page_html(url: str = TARGET_URL, timeout: int = 30) -> str:
-    if _PLAYWRIGHT_AVAILABLE:
-        return _fetch_page_html_rendered(url, timeout)
-    print(
-        "[WARN] Playwrightが導入されていません。`pip install playwright` と "
-        "`playwright install chromium` を実行してください。",
-        file=sys.stderr,
-    )
-    headers = {"User-Agent": USER_AGENT}
-    resp = requests.get(url, headers=headers, timeout=timeout)
-    resp.raise_for_status()
-    resp.encoding = resp.apparent_encoding or "utf-8"
-    return resp.text
+def fetch_page_html(url: str = TARGET_URL, timeout: int = 45, retries: int = 2) -> str:
+    last_error = None
+    for attempt in range(1, retries + 2):
+        try:
+            if _PLAYWRIGHT_AVAILABLE:
+                return _fetch_page_html_rendered(url, timeout)
+            print(
+                "[WARN] Playwrightが導入されていません。`pip install playwright` と "
+                "`playwright install chromium` を実行してください。",
+                file=sys.stderr,
+            )
+            headers = {"User-Agent": USER_AGENT}
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            resp.encoding = resp.apparent_encoding or "utf-8"
+            return resp.text
+        except Exception as e:
+            last_error = e
+            print(f"[WARN] ページ取得に失敗しました（{attempt}回目）: {e}", file=sys.stderr)
+            if attempt <= retries:
+                print("[INFO] 10秒待ってから再試行します...", file=sys.stderr)
+                time.sleep(10)
+    raise last_error
 
 
-def _fetch_page_html_rendered(url: str, timeout: int = 30) -> str:
+def _fetch_page_html_rendered(url: str, timeout: int = 45) -> str:
     timeout_ms = timeout * 1000
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -220,11 +231,11 @@ def run(save_json_path: str = "result.json") -> dict:
         print(f"    {f.hour}時台: {f.rain_mm}mm{mark}")
 
     if applicable:
-        print(f"\n=== 判定結果: 【雨割り適用】 ===")
+        print("\n=== 判定結果: 【雨割り適用】 ===")
         for f in matched:
             print(f"  該当: {f.hour}時台 {f.rain_mm}mm")
     else:
-        print(f"\n=== 判定結果: 【雨割り適用なし】 ===")
+        print("\n=== 判定結果: 【雨割り適用なし】 ===")
 
     result = {
         "status": "ok",
