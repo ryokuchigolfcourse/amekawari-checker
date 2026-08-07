@@ -16,6 +16,7 @@ RECIPIENTS = [
     "k.ikezawa@tobu.net",
     "m.masuoka@tobu.net",
     "t.inoue@tobu.net",
+    "k.kondou@tobu.net",
 ]
 
 SMTP_HOST = "smtp.gmail.com"
