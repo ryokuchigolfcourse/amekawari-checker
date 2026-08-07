@@ -38,6 +38,32 @@ def send_email(sender: str, app_password: str, recipients: list, subject: str, b
 
 
 def main() -> int:
+    # --- テストモード: TEST_RECIPIENT が設定されていれば、天気判定結果に関係なく
+    #     指定した宛先1件だけにテストメールを送信して終了する ---
+    test_recipient = os.environ.get("TEST_RECIPIENT")
+    if test_recipient:
+        sender = os.environ.get("GMAIL_ADDRESS")
+        app_password = os.environ.get("GMAIL_APP_PASSWORD")
+        if not sender or not app_password:
+            print("[ERROR] 環境変数 GMAIL_ADDRESS または GMAIL_APP_PASSWORD が設定されていません。", file=sys.stderr)
+            return 1
+
+        subject = "【テスト】雨割り自動配信システム 動作確認メール"
+        body = (
+            "これは「雨割り自動配信システム」の動作確認用テストメールです。\n"
+            "このメールが届いていれば、メール送信の仕組みは正常に動作しています。\n\n"
+            "本番運用では、雨割りが適用される日にのみ、実際の配信内容を含む\n"
+            "お知らせメールが自動送信されます。\n"
+        )
+        print(f"[INFO] テストモード: {test_recipient} 宛にテストメールを送信します。")
+        try:
+            send_email(sender, app_password, [test_recipient], subject, body)
+        except Exception as e:
+            print(f"[ERROR] テストメール送信に失敗しました: {e}", file=sys.stderr)
+            return 1
+        print("[INFO] テストメール送信が完了しました。")
+        return 0
+
     result = load_result()
     status = result.get("status")
     print(f"[INFO] result.json の status: {status}")
