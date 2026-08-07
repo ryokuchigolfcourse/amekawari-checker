@@ -60,8 +60,11 @@ def send_email(
 
 
 def main() -> int:
-    test_recipient = os.environ.get("TEST_RECIPIENT")
-    if test_recipient:
+    # --- テストモード: TEST_RECIPIENT が設定されていれば、天気判定結果に関係なく
+    #     指定した宛先（カンマ区切りで複数指定可）だけにテストメールを送信して終了する ---
+    test_recipient_raw = os.environ.get("TEST_RECIPIENT")
+    if test_recipient_raw:
+        test_recipients = [addr.strip() for addr in test_recipient_raw.split(",") if addr.strip()]
         sender = os.environ.get("GMAIL_ADDRESS")
         app_password = os.environ.get("GMAIL_APP_PASSWORD")
         if not sender or not app_password:
@@ -92,9 +95,9 @@ def main() -> int:
             "\n"
             "（添付：告知用POP画像）\n"
         )
-        print(f"[INFO] テストモード: {test_recipient} 宛にテストメールを送信します。")
+        print(f"[INFO] テストモード: {test_recipients} 宛にテストメールを送信します。")
         try:
-            send_email(sender, app_password, [test_recipient], subject, body, image_path=POP_IMAGE_PATH)
+            send_email(sender, app_password, test_recipients, subject, body, image_path=POP_IMAGE_PATH)
         except Exception as e:
             print(f"[ERROR] テストメール送信に失敗しました: {e}", file=sys.stderr)
             return 1
