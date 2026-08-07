@@ -1,0 +1,26 @@
+name: テストメール送信
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  send_test_email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリ取得
+        uses: actions/checkout@v4
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: ライブラリインストール
+        run: pip install requests
+
+      - name: テストメール送信
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          TEST_RECIPIENT: t.inoue@tobu.net
+        run: python email_notify.py
