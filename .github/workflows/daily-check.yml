@@ -40,13 +40,13 @@ jobs:
         run: python tumblr_post.py
 
       - name: LINEへ配信（雨割り適用時のみ）
-      　if: always()
+        if: always()
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
         run: python line_post.py
 
       - name: メール通知（雨割り適用時のみ）
-      　if: always()
+        if: always()
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
