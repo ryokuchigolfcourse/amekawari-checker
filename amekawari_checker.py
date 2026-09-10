@@ -38,7 +38,7 @@ class HourlyForecast:
     rain_mm: float
 
 
-def fetch_page_html(url: str = TARGET_URL, timeout: int = 45, retries: int = 2) -> str:
+def fetch_page_html(url: str = TARGET_URL, timeout: int = 60, retries: int = 4) -> str:
     last_error = None
     for attempt in range(1, retries + 2):
         try:
