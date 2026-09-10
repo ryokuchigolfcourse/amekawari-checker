@@ -3,6 +3,9 @@ name: 雨割り自動判定
 on:
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -10,26 +13,49 @@ jobs:
       - name: リポジトリ取得
         uses: actions/checkout@v4
 
+      - name: 状態確認（二重実行防止）
+        id: check_state
+        run: |
+          TODAY=$(TZ='Asia/Tokyo' date +%Y-%m-%d)
+          echo "today=$TODAY" >> "$GITHUB_OUTPUT"
+          if [ -f state.json ]; then
+            STATE_DATE=$(python3 -c "import json;print(json.load(open('state.json')).get('date',''))" 2>/dev/null || echo "")
+            STATE_HANDLED=$(python3 -c "import json;print(json.load(open('state.json')).get('handled', False))" 2>/dev/null || echo "False")
+            if [ "$STATE_DATE" = "$TODAY" ] && [ "$STATE_HANDLED" = "True" ]; then
+              echo "本日分は既に処理済みのため、今回はスキップします。"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Python セットアップ
+        if: steps.check_state.outputs.skip != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: ライブラリインストール
+        if: steps.check_state.outputs.skip != 'true'
         run: |
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
       - name: 判定スクリプト実行
+        if: steps.check_state.outputs.skip != 'true'
         run: python amekawari_checker.py
 
       - name: 結果を保存（確認用）
+        if: steps.check_state.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: result
           path: result.json
 
       - name: Tumblrへ投稿（雨割り適用時のみ）
+        if: steps.check_state.outputs.skip != 'true'
         env:
           TUMBLR_CONSUMER_KEY: ${{ secrets.TUMBLR_CONSUMER_KEY }}
           TUMBLR_CONSUMER_SECRET: ${{ secrets.TUMBLR_CONSUMER_SECRET }}
@@ -38,14 +64,42 @@ jobs:
         run: python tumblr_post.py
 
       - name: LINEへ配信（雨割り適用時のみ）
-        if: always()
+        if: always() && steps.check_state.outputs.skip != 'true'
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
         run: python line_post.py
 
-      - name: メール通知（雨割り適用時のみ）
-        if: always()
+      - name: メール通知（雨割り適用時のみ・失敗時は緊急連絡）
+        if: always() && steps.check_state.outputs.skip != 'true'
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python email_notify.py
+
+      - name: 状態を記録（二重実行防止用）
+        if: always() && steps.check_state.outputs.skip != 'true'
+        run: |
+          python3 -c "
+          import json
+          try:
+              with open('result.json', encoding='utf-8') as f:
+                  r = json.load(f)
+              status = r.get('status')
+              applicable = r.get('applicable')
+          except Exception:
+              status = None
+              applicable = None
+          if status == 'ok':
+              with open('state.json', 'w', encoding='utf-8') as f:
+                  json.dump({'date': '${{ steps.check_state.outputs.today }}', 'handled': True, 'applicable': applicable}, f, ensure_ascii=False)
+              print('state.json を更新しました（handled=True）')
+          else:
+              print('判定が失敗状態のため、state.jsonは更新しません（次回の再試行を許可）')
+          "
+          if [ -f state.json ]; then
+            git config user.name "amekawari-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add state.json
+            git diff --cached --quiet || git commit -m "update state.json"
+            git push || echo "push に失敗しましたが、処理は継続します"
+          fi
