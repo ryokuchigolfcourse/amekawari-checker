@@ -59,9 +59,31 @@ def send_email(
         server.sendmail(sender, recipients, msg.as_string())
 
 
+def send_failure_alert(sender: str, app_password: str, status: str, target_date: str) -> None:
+    subject = "【緊急・要確認】雨割り自動判定システムが失敗しました"
+    reason = {
+        "error": "天気予報サイト（ウェザーニュース）へのアクセスに失敗しました。",
+        "no_data": "天気予報サイトから、必要なデータが取得できませんでした。",
+    }.get(status, f"不明な状態（status={status}）です。")
+
+    body = (
+        "雨割り自動判定システムが、本日の判定処理に失敗しました。\n"
+        "自動配信（Tumblr・LINE・メール）は行われていません。\n\n"
+        f"■ 判定対象日: {target_date}\n"
+        f"■ 失敗理由: {reason}\n\n"
+        "お手数ですが、以下のいずれかの対応をお願いします。\n"
+        "  1. ウェザーニュース「南筑波ゴルフ場」のページを手動で確認し、\n"
+        "     必要であれば手動で雨割りを宣言してください。\n"
+        "     https://weathernews.jp/golf/kanto/ibaraki/113/\n"
+        "  2. しばらく時間を置いて、システムが自動で再試行するのを待つ\n"
+        "     （本日 12:30頃にも自動で再試行される設定になっています）\n\n"
+        "（このメールは自動送信です）\n"
+    )
+    print(f"[INFO] 判定失敗のため、緊急アラートメールを送信します。宛先: {RECIPIENTS}")
+    send_email(sender, app_password, RECIPIENTS, subject, body)
+
+
 def main() -> int:
-    # --- テストモード: TEST_RECIPIENT が設定されていれば、天気判定結果に関係なく
-    #     指定した宛先（カンマ区切りで複数指定可）だけにテストメールを送信して終了する ---
     test_recipient_raw = os.environ.get("TEST_RECIPIENT")
     if test_recipient_raw:
         test_recipients = [addr.strip() for addr in test_recipient_raw.split(",") if addr.strip()]
@@ -108,8 +130,20 @@ def main() -> int:
     status = result.get("status")
     print(f"[INFO] result.json の status: {status}")
 
-    if status != "ok":
-        print("[INFO] 判定結果が 'ok' ではないため、メール送信は行いません。")
+    sender = os.environ.get("GMAIL_ADDRESS")
+    app_password = os.environ.get("GMAIL_APP_PASSWORD")
+    if not sender or not app_password:
+        print("[ERROR] 環境変数 GMAIL_ADDRESS または GMAIL_APP_PASSWORD が設定されていません。", file=sys.stderr)
+        return 1
+
+    if status in ("error", "no_data"):
+        target_date = result.get("target_date", "不明")
+        try:
+            send_failure_alert(sender, app_password, status, target_date)
+        except Exception as e:
+            print(f"[ERROR] 緊急アラートメールの送信に失敗しました: {e}", file=sys.stderr)
+            return 1
+        print("[INFO] 緊急アラートメールを送信しました。")
         return 0
 
     applicable = result.get("applicable")
@@ -119,12 +153,6 @@ def main() -> int:
     if not applicable:
         print("[INFO] 雨割り非適用のため、メール送信はスキップします。")
         return 0
-
-    sender = os.environ.get("GMAIL_ADDRESS")
-    app_password = os.environ.get("GMAIL_APP_PASSWORD")
-    if not sender or not app_password:
-        print("[ERROR] 環境変数 GMAIL_ADDRESS または GMAIL_APP_PASSWORD が設定されていません。", file=sys.stderr)
-        return 1
 
     subject = f"【雨割り適用のお知らせ】{target_date} 配信済み"
     body = (
