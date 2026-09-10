@@ -1,8 +1,6 @@
 name: 雨割り自動判定
 
 on:
-  schedule:
-    - cron: "59 2 * * *"
   workflow_dispatch: {}
 
 jobs:
