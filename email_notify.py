@@ -11,6 +11,7 @@ from email.utils import formatdate
 
 RESULT_JSON_PATH = "result.json"
 POP_IMAGE_PATH = "amekawari_pop.png"
+TUMBLR_POST_RESULT_PATH = "tumblr_post_result.txt"
 
 RECIPIENTS = [
     "k.ikezawa@tobu.net",
@@ -22,10 +23,20 @@ RECIPIENTS = [
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 
+TUMBLR_LOGIN_URL = "https://www.tumblr.com/blog/minamitsukubag"
+
 
 def load_result(path: str = RESULT_JSON_PATH) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_tumblr_post_status(path: str = TUMBLR_POST_RESULT_PATH) -> str:
+    if not os.path.exists(path):
+        return "unknown"
+    with open(path, "r", encoding="utf-8") as f:
+        first_line = f.readline().strip()
+    return first_line or "unknown"
 
 
 def send_email(
@@ -83,6 +94,35 @@ def send_failure_alert(sender: str, app_password: str, status: str, target_date:
     send_email(sender, app_password, RECIPIENTS, subject, body)
 
 
+def build_applicable_body(message: str, tumblr_status: str) -> str:
+    parts = []
+    parts.append("雨割り適用の判定が出ました。以下の内容で自動配信しています。\n")
+
+    if tumblr_status == "success":
+        parts.append("■ ホームページ（Tumblr）: 自動投稿 完了しました。特に対応は不要です。\n")
+    else:
+        parts.append(
+            "■ ホームページ（Tumblr）: 自動投稿に失敗しました。"
+            "お手数ですが、下記の手順で手動投稿をお願いします。\n"
+            "\n"
+            "【手動投稿の手順】\n"
+            f"  1. {TUMBLR_LOGIN_URL} を開き、南筑波ゴルフ場のアカウントでログイン\n"
+            "  2. 「投稿を作成」→「画像」を選択\n"
+            "  3. 添付されている告知画像（amekawari_pop.png）をアップロード\n"
+            "  4. 下記の【コピペ用】の文章を、キャプション欄にそのまま貼り付け\n"
+            "  5. 「公開」ボタンを押して投稿\n"
+        )
+
+    parts.append("■ LINE公式アカウント: 自動配信 完了しました。特に対応は不要です。\n")
+
+    parts.append("\n【コピペ用：配信文章】\n")
+    parts.append("----------------------------------------")
+    parts.append(message)
+    parts.append("----------------------------------------\n")
+    parts.append("（このメールは自動送信です）")
+    return "\n".join(parts)
+
+
 def main() -> int:
     test_recipient_raw = os.environ.get("TEST_RECIPIENT")
     if test_recipient_raw:
@@ -106,17 +146,8 @@ def main() -> int:
             "\n"
             "予約・お問い合わせ：営業課予約係 TEL 029-847-7521"
         )
-        body = (
-            "これは「雨割り自動配信システム」の動作確認用テストメールです。\n"
-            "（※日付・内容は仮のものです。実際の配信では、その日の判定結果に応じた\n"
-            "　正しい日付・内容が自動生成されます）\n\n"
-            "実際にTumblr・LINEへ配信されるのと同じ文面・画像を、以下に再現しています。\n\n"
-            "----------------------------------------\n"
-            f"{sample_message}\n"
-            "----------------------------------------\n"
-            "\n"
-            "（添付：告知用POP画像）\n"
-        )
+        body = build_applicable_body(sample_message, tumblr_status="failed")
+        body = "【これはテストメールです。以下は仮の内容です】\n\n" + body
         print(f"[INFO] テストモード: {test_recipients} 宛にテストメールを送信します。")
         try:
             send_email(sender, app_password, test_recipients, subject, body, image_path=POP_IMAGE_PATH)
@@ -154,14 +185,12 @@ def main() -> int:
         print("[INFO] 雨割り非適用のため、メール送信はスキップします。")
         return 0
 
-    subject = f"【雨割り適用のお知らせ】{target_date} 配信済み"
-    body = (
-        f"以下の内容で、TumblrおよびLINEへ雨割りのお知らせを自動配信しました。\n"
-        f"（このメールは自動送信です）\n\n"
-        f"----------------------------------------\n"
-        f"{message}\n"
-        f"----------------------------------------\n"
-    )
+    tumblr_status = load_tumblr_post_status()
+    print(f"[INFO] Tumblr投稿結果: {tumblr_status}")
+
+    subject_mark = "" if tumblr_status == "success" else "【要対応】"
+    subject = f"{subject_mark}【雨割り適用のお知らせ】{target_date}"
+    body = build_applicable_body(message, tumblr_status)
 
     print(f"[INFO] 雨割り適用のため、メールを送信します。宛先: {RECIPIENTS}")
     try:
