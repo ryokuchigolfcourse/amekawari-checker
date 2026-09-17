@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Tumblr自動投稿スクリプト
+"""
+
 import json
 import os
 import sys
@@ -10,6 +14,7 @@ import pytumblr
 BLOG_IDENTIFIER = "minamitsukubag.tumblr.com"
 RESULT_JSON_PATH = "result.json"
 POP_IMAGE_PATH = "amekawari_pop.png"
+POST_RESULT_PATH = "tumblr_post_result.txt"
 
 
 def load_result(path: str = RESULT_JSON_PATH) -> dict:
@@ -48,23 +53,9 @@ def post_to_tumblr(client, message: str, target_date: str) -> dict:
     return response
 
 
-def extract_photo_url(client, create_response: dict):
-    post_id = create_response.get("id") or create_response.get("response", {}).get("id")
-    if not post_id:
-        return None
-    try:
-        detail = client.posts(BLOG_IDENTIFIER, id=post_id)
-    except Exception as e:
-        print(f"[WARN] 投稿詳細の取得に失敗しました（画像URLなしで続行）: {e}", file=sys.stderr)
-        return None
-
-    posts = detail.get("posts", [])
-    if not posts:
-        return None
-    photos = posts[0].get("photos", [])
-    if not photos:
-        return None
-    return photos[0].get("original_size", {}).get("url")
+def _write_post_result(status: str, detail: str = "") -> None:
+    with open(POST_RESULT_PATH, "w", encoding="utf-8") as f:
+        f.write(f"{status}\n{detail}\n")
 
 
 def main() -> int:
@@ -84,30 +75,26 @@ def main() -> int:
         print("[INFO] 雨割り非適用のため、Tumblrへの投稿はスキップします。")
         return 0
 
-    print("[INFO] 雨割り適用のため、Tumblrへ投稿します。")
+    print("[INFO] 雨割り適用のため、Tumblrへ投稿を試みます。")
     client = build_client()
     try:
         response = post_to_tumblr(client, message, target_date)
     except Exception as e:
-        print(f"[ERROR] Tumblrへの投稿に失敗しました: {e}", file=sys.stderr)
-        return 1
+        print(f"[WARN] Tumblrへの投稿に失敗しました（処理は継続します）: {e}", file=sys.stderr)
+        _write_post_result("failed", str(e))
+        return 0
 
-    print("[INFO] Tumblrへの投稿結果:")
+    print("[INFO] Tumblr APIレスポンス:")
     print(json.dumps(response, ensure_ascii=False, indent=2))
 
     if isinstance(response, dict) and response.get("meta", {}).get("status") not in (200, 201, None):
-        print("[ERROR] Tumblr APIがエラーを返しました。", file=sys.stderr)
-        return 1
-
-    photo_url = extract_photo_url(client, response)
-    if photo_url:
-        with open("tumblr_photo_url.txt", "w", encoding="utf-8") as f:
-            f.write(photo_url)
-        print(f"[INFO] 画像URLを取得しました（LINE配信で再利用します）: {photo_url}")
-    else:
-        print("[WARN] 画像URLを取得できませんでした。LINE配信では画像なしになります。")
+        reason = response.get("meta", {}).get("msg", "unknown")
+        print(f"[WARN] Tumblr APIがエラーを返しました（処理は継続します）: {reason}", file=sys.stderr)
+        _write_post_result("failed", reason)
+        return 0
 
     print("[INFO] Tumblrへの投稿が完了しました。")
+    _write_post_result("success")
     return 0
 
 
