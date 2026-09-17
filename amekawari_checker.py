@@ -2,6 +2,13 @@
 # -*- coding: utf-8 -*-
 """
 南筑波ゴルフ場「雨割り」自動判定ツール
+====================================
+
+【適用条件（2026/09 改訂）】
+  前日11:59時点で、翌日 7:00〜13:00 の間に
+  「1時間以上、降水量が3mm/h以上5mm/h未満」の予報がある場合に適用し、
+  雨割りを宣言する。
+  当日の降雨については適用されない（＝前日時点の"予報"だけで判定する）。
 """
 
 import json
@@ -22,9 +29,16 @@ except ImportError:
     _PLAYWRIGHT_AVAILABLE = False
 
 TARGET_URL = "https://weathernews.jp/golf/kanto/ibaraki/113/"
-TARGET_HOURS = [7, 8, 9]
-RAIN_THRESHOLD_MM = 3.0
+
+# 判定対象とする「時」（24時間表記）。7時〜13時の間の1時間降水量を見る。
+TARGET_HOURS = [7, 8, 9, 10, 11, 12]
+
+# 「1時間降水量3mm以上5mm未満」の閾値(mm) ※範囲指定
+RAIN_THRESHOLD_MIN_MM = 3.0
+RAIN_THRESHOLD_MAX_MM = 5.0
+
 MIN_HIT_HOURS = 1
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -58,12 +72,12 @@ def fetch_page_html(url: str = TARGET_URL, timeout: int = 60, retries: int = 4) 
             last_error = e
             print(f"[WARN] ページ取得に失敗しました（{attempt}回目）: {e}", file=sys.stderr)
             if attempt <= retries:
-                print("[INFO] 10秒待ってから再試行します...", file=sys.stderr)
-                time.sleep(10)
+                print("[INFO] 15秒待ってから再試行します...", file=sys.stderr)
+                time.sleep(15)
     raise last_error
 
 
-def _fetch_page_html_rendered(url: str, timeout: int = 45) -> str:
+def _fetch_page_html_rendered(url: str, timeout: int = 60) -> str:
     timeout_ms = timeout * 1000
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -178,14 +192,15 @@ def judge_amekawari(
     forecasts: List[HourlyForecast],
     target_date: date,
     target_hours: List[int] = TARGET_HOURS,
-    threshold_mm: float = RAIN_THRESHOLD_MM,
+    threshold_min_mm: float = RAIN_THRESHOLD_MIN_MM,
+    threshold_max_mm: float = RAIN_THRESHOLD_MAX_MM,
     min_hit_hours: int = MIN_HIT_HOURS,
 ):
     checked = [f for f in forecasts if f.target_date == target_date and f.hour in target_hours]
     if not checked:
         return None, [], []
 
-    matched = [f for f in checked if f.rain_mm >= threshold_mm]
+    matched = [f for f in checked if threshold_min_mm <= f.rain_mm < threshold_max_mm]
     applicable = len(matched) >= min_hit_hours
     return applicable, matched, checked
 
@@ -197,7 +212,7 @@ def run(save_json_path: str = "result.json") -> dict:
     print(f"[INFO] 実行日時: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"[INFO] 判定対象日（翌日）: {target_date}")
     print(f"[INFO] 判定対象時間帯: {TARGET_HOURS} 時台")
-    print(f"[INFO] 閾値: {RAIN_THRESHOLD_MM}mm/h 以上 が {MIN_HIT_HOURS}時間以上")
+    print(f"[INFO] 閾値: {RAIN_THRESHOLD_MIN_MM}mm/h 以上 {RAIN_THRESHOLD_MAX_MM}mm/h 未満 が {MIN_HIT_HOURS}時間以上")
     print(f"[INFO] データ取得元: {TARGET_URL}")
 
     try:
@@ -227,7 +242,7 @@ def run(save_json_path: str = "result.json") -> dict:
 
     print("[INFO] 対象時間帯の予報値:")
     for f in checked:
-        mark = " ← 3mm以上" if f.rain_mm >= RAIN_THRESHOLD_MM else ""
+        mark = " ← 該当(3〜5mm未満)" if RAIN_THRESHOLD_MIN_MM <= f.rain_mm < RAIN_THRESHOLD_MAX_MM else ""
         print(f"    {f.hour}時台: {f.rain_mm}mm{mark}")
 
     if applicable:
@@ -241,7 +256,8 @@ def run(save_json_path: str = "result.json") -> dict:
         "status": "ok",
         "target_date": str(target_date),
         "target_hours": TARGET_HOURS,
-        "threshold_mm": RAIN_THRESHOLD_MM,
+        "threshold_min_mm": RAIN_THRESHOLD_MIN_MM,
+        "threshold_max_mm": RAIN_THRESHOLD_MAX_MM,
         "applicable": applicable,
         "checked": [asdict(f) | {"target_date": str(f.target_date)} for f in checked],
         "matched_hours": [f.hour for f in matched],
@@ -250,8 +266,8 @@ def run(save_json_path: str = "result.json") -> dict:
             _build_applicable_message(target_date)
             if applicable
             else (
-                f"{target_date.strftime('%m月%d日')}の天気予報では、雨割り適用条件（7時〜10時の間に"
-                f"1時間降水量3mm以上）に該当しませんでした。雨割りは適用されません。"
+                f"{target_date.strftime('%m月%d日')}の天気予報では、雨割り適用条件（7時〜13時の間に"
+                f"1時間降水量3mm以上5mm未満）に該当しませんでした。雨割りは適用されません。"
             )
         ),
     }
