@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+LINE公式アカウント自動配信スクリプト
+"""
+
 import json
 import os
 import sys
@@ -7,21 +11,16 @@ import sys
 import requests
 
 RESULT_JSON_PATH = "result.json"
-PHOTO_URL_PATH = "tumblr_photo_url.txt"
 LINE_BROADCAST_URL = "https://api.line.me/v2/bot/message/broadcast"
+
+# GitHub Pagesで恒久的に公開されているPOP画像のURL
+# （Tumblrへの投稿が成功したかどうかに関係なく、常にこのURLを使う）
+POP_IMAGE_URL = "https://ryokuchigolfcourse.github.io/amekawari-checker/amekawari_pop.png"
 
 
 def load_result(path: str = RESULT_JSON_PATH) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def load_photo_url(path: str = PHOTO_URL_PATH):
-    if not os.path.exists(path):
-        return None
-    with open(path, "r", encoding="utf-8") as f:
-        url = f.read().strip()
-    return url or None
 
 
 def broadcast_line_message(access_token: str, message_text: str, photo_url=None) -> requests.Response:
@@ -65,13 +64,9 @@ def main() -> int:
         return 1
 
     print("[INFO] 雨割り適用のため、LINEへ配信します。")
-    photo_url = load_photo_url()
-    if photo_url:
-        print(f"[INFO] 画像も一緒に配信します: {photo_url}")
-    else:
-        print("[INFO] 画像URLが見つからないため、テキストのみ配信します。")
+    print(f"[INFO] 画像URL（GitHub Pages固定URL）: {POP_IMAGE_URL}")
 
-    resp = broadcast_line_message(access_token, message, photo_url=photo_url)
+    resp = broadcast_line_message(access_token, message, photo_url=POP_IMAGE_URL)
 
     print(f"[INFO] LINE API レスポンス status_code: {resp.status_code}")
     print(f"[INFO] LINE API レスポンス本文: {resp.text}")
