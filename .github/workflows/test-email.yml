@@ -18,9 +18,54 @@ jobs:
       - name: ライブラリインストール
         run: pip install requests
 
+      - name: テスト用result.jsonを作成（雨割り適用のサンプル）
+        run: |
+          python3 - <<'EOF'
+          import json
+          from datetime import date, timedelta
+
+          target_date = date.today() + timedelta(days=1)
+          weekday_kanji = ["月", "火", "水", "木", "金", "土", "日"]
+          weekday_str = weekday_kanji[target_date.weekday()]
+          date_str = f"{target_date.month}/{target_date.day}({weekday_str})"
+
+          message = (
+              "★雨割り営業のお知らせ★\n"
+              f"明日{date_str}は、「雨割りプラン」を適用いたします。\n"
+              "本日中に公式Webサイトまたは電話でのご予約の方が必要となりますので\n"
+              "ご注意ください。\n"
+              "ご予約がない場合は適用されませんのでご予約お待ちしております。\n"
+              "\n"
+              "・ラウンド：2,000円引き（税込）\n"
+              "・ハーフ　：1,000円引き（税込）\n"
+              "\n"
+              "予約・お問い合わせ：営業課予約係 TEL 029-847-7521"
+          )
+
+          result = {
+              "status": "ok",
+              "target_date": str(target_date),
+              "target_hours": [7, 8, 9, 10, 11, 12, 13],
+              "threshold_min_mm": 2.0,
+              "threshold_max_mm": 5.0,
+              "applicable": True,
+              "checked": [
+                  {"hour": 7, "rain_mm": 1.0, "target_date": str(target_date)},
+                  {"hour": 8, "rain_mm": 2.5, "target_date": str(target_date)},
+                  {"hour": 9, "rain_mm": 1.5, "target_date": str(target_date)},
+              ],
+              "matched_hours": [8],
+              "generated_at": "2026-01-01T11:59:00",
+              "message": message,
+          }
+          with open("result.json", "w", encoding="utf-8") as f:
+              json.dump(result, f, ensure_ascii=False, indent=2)
+          print("[INFO] テスト用 result.json を作成しました（テストメール送信確認用のサンプルデータです）。")
+          EOF
+
       - name: テストメール送信
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          TEST_RECIPIENT: t.inoue@tobu.net,k.kondou@tobu.net
+          TEST_RECIPIENT: t.inoue@tobu.net
         run: python email_notify.py
